@@ -2,17 +2,27 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+// Mecanum-Wheel steering after Lynch et. al 2017
 public class mecanum_wheel : MonoBehaviour
 {
     public Rigidbody rb;
     public ConfigurableJoint cj;
     public GameObject go_wheel;
     public Transform tf_base;
+
+    // wheel geometry parametes set by user
     public float gamma, beta, r;
-    float x_velocity, z_velocity, w_velocity;
+
+    // max velocitys for hand-control
+    float x_velocity, z_velocity, w_velocity, max_vel;
+
+    // unused
     float alpha, l;
+
+    // calculation variables
     float phi, vel;
     float x_dist, z_dist;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -34,19 +44,19 @@ public class mecanum_wheel : MonoBehaviour
         // get angle between robot forward direction and where the wheel is
         if (z_dist > 0 && x_dist > 0)
         {
-            alpha = 360 - Mathf.Atan(x_dist/z_dist) * Mathf.Rad2Deg;
+            alpha = 360 - Mathf.Atan(x_dist / z_dist) * Mathf.Rad2Deg;
         }
         else if (z_dist < 0)
         {
-            alpha = 180 - Mathf.Atan(x_dist/z_dist) * Mathf.Rad2Deg;
+            alpha = 180 - Mathf.Atan(x_dist / z_dist) * Mathf.Rad2Deg;
         }
-        else alpha = - Mathf.Atan(x_dist/z_dist) * Mathf.Rad2Deg;
-        Debug.Log(transform.name + " alpha: "+ alpha);
+        else alpha = -Mathf.Atan(x_dist / z_dist) * Mathf.Rad2Deg;
+        // Debug.Log(transform.name + " alpha: " + alpha);
 
         beta = 0;
     }
 
-    // Update is called once per frame
+    // FixedUpdate is called once every 2 ms
     void FixedUpdate()
     {
         // get x,y and w velocity input
@@ -66,7 +76,7 @@ public class mecanum_wheel : MonoBehaviour
         // Angle of rotation between base and world
         // negative sign because unity measures rotation leftwise and not rightwise
         // (positive rotation results in negative angle)
-        phi =  Vector3.SignedAngle(tf_base.forward, Vector3.right, Vector3.up) * Mathf.Deg2Rad;
+        phi = Vector3.SignedAngle(tf_base.forward, Vector3.right, Vector3.up) * Mathf.Deg2Rad;
         // Debug.Log(transform.name + " phi: "+ phi * Mathf.Rad2Deg);
 
         // rotation-matrix between World an Robot
@@ -92,18 +102,18 @@ public class mecanum_wheel : MonoBehaviour
 
         // Position-matrix
         float[,] matP = new float[2, 3];
-        matP[0,0] = - x_dist;
-        matP[0,1] = 1;
-        matP[0,2] = 0;
-        matP[1,0] = z_dist;
-        matP[1,1] = 0;
-        matP[1,2] = 1;
+        matP[0, 0] = -x_dist;
+        matP[0, 1] = 1;
+        matP[0, 2] = 0;
+        matP[1, 0] = z_dist;
+        matP[1, 1] = 0;
+        matP[1, 2] = 1;
 
         // Constraint-matrix
-        float [,] matJ = new float[2, 2];
+        float[,] matJ = new float[2, 2];
         matJ[0, 0] = Mathf.Cos(beta);
         matJ[0, 1] = Mathf.Sin(beta);
-        matJ[1, 0] = - Mathf.Sin(beta);
+        matJ[1, 0] = -Mathf.Sin(beta);
         matJ[1, 1] = Mathf.Cos(beta);
         // float [,] matJ = new float[1, 3];
         // matJ[0, 0] = Mathf.Cos(alpha + beta + gamma);
@@ -112,20 +122,20 @@ public class mecanum_wheel : MonoBehaviour
 
         // Geometry-matrix
         float[,] matG = new float[1, 2];
-        matG[0, 0] = 1/r;
-        matG[0, 1] = (Mathf.Tan(gamma))/r;
+        matG[0, 0] = 1 / r;
+        matG[0, 1] = (Mathf.Tan(gamma)) / r;
 
         float[,] mat = MatrixMultiply(matROT, matVel);
         mat = MatrixMultiply(matP, mat);
         mat = MatrixMultiply(matJ, mat);
         mat = MatrixMultiply(matG, mat);
-        vel = mat[0,0];
+        vel = mat[0, 0];
 
         // float[,] mat = MatrixMultiply(MatrixMultiply(matJ, matROT), matVel);
         // vel = -1/Mathf.Sin(gamma) * mat[0,0];
-        Debug.Log(transform.name + " vel: "+ vel);
-        
-        cj.targetAngularVelocity = Vector3.right * vel;
+        // Debug.Log(transform.name + " vel: " + vel);
+
+        // cj.targetAngularVelocity = Vector3.right * vel;
         // rb.AddRelativeTorque(Vector3.right * vel * 10, ForceMode.VelocityChange);
         // rb.velocity = new Vector3(vel * Mathf.Cos(phi), 0, vel * Mathf.Sin(phi));
     }
@@ -137,7 +147,7 @@ public class mecanum_wheel : MonoBehaviour
         int columnsA = matA.GetLength(1);
         int rowsB = matB.GetLength(0);
         int columnsB = matB.GetLength(1);
-        
+
         if (columnsA != rowsB)
         {
             res = null;
@@ -162,28 +172,28 @@ public class mecanum_wheel : MonoBehaviour
     }
 
     // Visualization for debugging
-    void OnDrawGizmos()
-    {
-        // draw line for v
-        Gizmos.color = Color.red;
-        Gizmos.DrawLine(
-            rb.transform.position, 
-            new Vector3(
-            rb.transform.position.x + vel * Mathf.Cos(phi)/10, 
-            rb.transform.position.y, 
-            rb.transform.position.z + vel * Mathf.Sin(phi)/10)
-            );
+    // void OnDrawGizmos()
+    // {
+    //     // draw line for v
+    //     Gizmos.color = Color.red;
+    //     Gizmos.DrawLine(
+    //         rb.transform.position,
+    //         new Vector3(
+    //         rb.transform.position.x + vel * Mathf.Cos(phi) / 10,
+    //         rb.transform.position.y,
+    //         rb.transform.position.z + vel * Mathf.Sin(phi) / 10)
+    //         );
 
-        // draw line for x_p
-        // Gizmos.color = Color.green;
-        // Gizmos.DrawLine(rb.transform.position, new Vector3(rb.transform.position.x + vel * Mathf.Cos(phi), rb.transform.position.y, rb.transform.position.z));
+    //     // draw line for x_p
+    //     // Gizmos.color = Color.green;
+    //     // Gizmos.DrawLine(rb.transform.position, new Vector3(rb.transform.position.x + vel * Mathf.Cos(phi), rb.transform.position.y, rb.transform.position.z));
 
-        // draw angle beta
-        /*Gizmos.color = Color.blue;
-        Gizmos.DrawLine(rb.transform.position, 
-        new Vector3(
-        rb.transform.position.x + Mathf.Sin(beta)*4, 
-        rb.transform.position.y, 
-        rb.transform.position.z + Mathf.Cos(beta)*4));*/
-    }
+    //     // draw angle beta
+    //     /*Gizmos.color = Color.blue;
+    //     Gizmos.DrawLine(rb.transform.position, 
+    //     new Vector3(
+    //     rb.transform.position.x + Mathf.Sin(beta)*4, 
+    //     rb.transform.position.y, 
+    //     rb.transform.position.z + Mathf.Cos(beta)*4));*/
+    // }
 }
