@@ -12,9 +12,10 @@ public class mecanum_wheel : MonoBehaviour
 
     // wheel geometry parametes set by user
     public float gamma, beta, r;
+    public float max_vel;
 
     // max velocitys for hand-control
-    float x_velocity, z_velocity, w_velocity, max_vel;
+    float x_velocity, z_velocity, w_velocity;
 
     // unused
     float alpha, l;
