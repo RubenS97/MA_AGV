@@ -7,7 +7,7 @@ public class standard_wheel_controller : MonoBehaviour
     Component[] cp_wheels;
     float x_velocity, z_velocity, w_velocity;
     // calculation variables
-    float[] x_dist, z_dist, beta, gamma, radius, vel, vel_max;
+    float[] x_dist, z_dist, beta, alpha, radius, vel, vel_max, len;
     float phi;
 
     // constraint matrix H(phi) done with jagged matrix 
@@ -36,17 +36,27 @@ public class standard_wheel_controller : MonoBehaviour
         x_dist = new float[cp_wheels.Length];
         z_dist = new float[cp_wheels.Length];
         radius = new float[cp_wheels.Length];
+        beta = new float[cp_wheels.Length];
+        alpha = new float[cp_wheels.Length];
+        len = new float[cp_wheels.Length];
 
         int wheel_index = 0;
         foreach (standard_wheel_param wheel in cp_wheels)
         {
-            matH[wheel_index] = new float[2, 1];
+            matH[wheel_index] = new float[1, 3];
+            // matH[wheel_index] = new float[2, 1];
             matP[wheel_index] = new float[2, 1];
             matVel[wheel_index] = new float[2, 1];
             x_dist[wheel_index] = wheel.GetComponent<Transform>().position.x - transform.position.x;
             // parent transform should have same z-component but isnt
             z_dist[wheel_index] = wheel.GetComponent<Transform>().position.z - transform.position.z;
             z_dist[wheel_index] = 0;
+            // calculate magnitude(length) of wheel position vector
+            len[wheel_index] = Mathf.Sqrt(Mathf.Pow(z_dist[wheel_index], 2) + Mathf.Pow(x_dist[wheel_index], 2));
+
+            alpha[wheel_index] = Mathf.Atan(z_dist[wheel_index] / x_dist[wheel_index]);
+
+            beta[wheel_index] = 0;
             radius[wheel_index] = wheel.GetComponent<standard_wheel_param>().r;
             vel_max[wheel_index] = wheel.GetComponent<standard_wheel_param>().max_vel;
             wheel_index++;
@@ -62,62 +72,107 @@ public class standard_wheel_controller : MonoBehaviour
         float w = -w_velocity * Input.GetAxis("Orientation");
 
         // input velocity-matrix
-        float[,] matXY = new float[2, 1];
-        matXY[0, 0] = x;
-        matXY[1, 0] = z;
+        float[,] matXYW = new float[2, 1];
+        matXYW[0, 0] = x;
+        matXYW[1, 0] = z;
+        matXYW[2, 0] = w;
 
         // Angle of rotation between base and world
         // negative sign because unity measures rotation leftwise and not rightwise
         // (positive rotation results in negative angle)
         phi = Vector3.SignedAngle(transform.forward, Vector3.right, Vector3.up) * Mathf.Deg2Rad;
 
+        // rotation matrix world-->robot
+        float[,] matR = new float[3, 3];
+        matR[0, 0] = Mathf.Cos(phi);
+        matR[0, 1] = Mathf.Sin(phi);
+        matR[0, 2] = 0;
+        matR[1, 0] = -Mathf.Sin(phi);
+        matR[1, 1] = Mathf.Cos(phi);
+        matR[1, 2] = 0;
+        matR[2, 0] = 0;
+        matR[2, 1] = 0;
+        matR[2, 2] = 1;
+
         int wheel_index = 0;
         foreach (standard_wheel_param wheel in cp_wheels)
         {
-            matH[wheel_index][0, 0] =
-            w * (
-                -Mathf.Sin(phi) * z_dist[wheel_index] - Mathf.Cos(phi) * x_dist[wheel_index]
-            );
-            // Debug.Log(transform.name + " \t matH[wheel_index][0, 0]   : \t" + matH[wheel_index][0, 0]);
+            matH[wheel_index][0, 0] = -Mathf.Sin(alpha[wheel_index] + beta[wheel_index]);
+            matH[wheel_index][0, 1] = Mathf.Cos(alpha[wheel_index] + beta[wheel_index]);
+            matH[wheel_index][0, 2] = len[wheel_index] * Mathf.Cos(beta[wheel_index]);
 
-            matH[wheel_index][1, 0] =
-            w * (
-                Mathf.Cos(phi) * z_dist[wheel_index] - Mathf.Sin(phi) * x_dist[wheel_index]
-            );
+            vel[wheel_index] = -MatrixMultiply(MatrixMultiply(matH[wheel_index], matR), matXYW)[0, 0];
 
-            matP[wheel_index] = MatrixAdd(matXY, matH[wheel_index]);
+
+
+            // matH[wheel_index][0, 0] =
+            // w * (
+            //     -Mathf.Sin(phi) * z_dist[wheel_index] - Mathf.Cos(phi) * x_dist[wheel_index]
+            // );
+            // // Debug.Log(transform.name + " \t matH[wheel_index][0, 0]   : \t" + matH[wheel_index][0, 0]);
+
+            // matH[wheel_index][1, 0] =
+            // w * (
+            //     Mathf.Cos(phi) * z_dist[wheel_index] - Mathf.Sin(phi) * x_dist[wheel_index]
+            // );
+
+            // matP[wheel_index] = MatrixAdd(matXY, matH[wheel_index]);
+
+            // // convert world-frame motion to robot-frame
+            // matP[wheel_index] = MatrixMultiply(matR, matP[wheel_index]);
+
+            // // calculate wheel velocity
+            // vel[wheel_index] = Mathf.Sqrt(Mathf.Pow(matP[wheel_index][0, 0], 2) + Mathf.Pow(matP[wheel_index][1, 0], 2));
+
+            // // calculate steering angle
+            // beta[wheel_index] = Mathf.Atan(matP[wheel_index][1, 0] / matP[wheel_index][0, 0]);
+
+            // // check quadrant of steering angle and correct if nessescary
+            // // Q1 no correction required
+            // // Q2 no correction required
+            // // Q3 beta = beta - 180° 
+            // else if (matP[wheel_index][1, 0] < 0 && matP[wheel_index][0, 0] < 0)
+            // {
+            //     beta[wheel_index] = beta[wheel_index] - Mathf.PI;
+            // }
+            // // Q4 beta = beta + 360°
+            // else if (matP[wheel_index][1, 0] < 0 && matP[wheel_index][0, 0] > 0)
+            // {
+            //     beta[wheel_index] = beta[wheel_index] + 2 * Mathf.PI;
+            // }
+
             // Debug.Log(transform.name + " \t matP[wheel_index][0, 0]   : \t" + matP[wheel_index][0, 0]);
 
-            // special case reference point p on line z_r = 0
-            if (z_dist[wheel_index] == 0)
-            {
-                // v
-                matVel[wheel_index][0, 0] =
-                Mathf.Cos(phi) * matP[wheel_index][0, 0] +
-                Mathf.Sin(phi) * matP[wheel_index][1, 0];
-                // Debug.Log(transform.name + " \t matVel[wheel_index][0, 0]   : \t" + matVel[wheel_index][0, 0]);
+            // // special case reference point p on line z_r = 0
+            // if (z_dist[wheel_index] == 0)
+            // {
+            //     // v
+            //     matVel[wheel_index][0, 0] =
+            //     Mathf.Cos(phi) * matP[wheel_index][0, 0] +
+            //     Mathf.Sin(phi) * matP[wheel_index][1, 0];
+            //     // Debug.Log(transform.name + " \t matVel[wheel_index][0, 0]   : \t" + matVel[wheel_index][0, 0]);
 
-                //w
-                matVel[wheel_index][1, 0] =
-                0;
-            }
-            else
-            {
-                // v
-                matVel[wheel_index][0, 0] =
-                (1 / z_dist[wheel_index]) * (
-                    (z_dist[wheel_index] * Mathf.Cos(phi) - x_dist[wheel_index] * Mathf.Sin(phi)) * matP[wheel_index][0, 0] +
-                    (z_dist[wheel_index] * Mathf.Sin(phi) + x_dist[wheel_index] * Mathf.Cos(phi)) * matP[wheel_index][1, 0]
-                );
+            //     //w
+            //     matVel[wheel_index][1, 0] =
+            //     0;
+            // }
+            // else
+            // {
+            //     // v
+            //     matVel[wheel_index][0, 0] =
+            //     (1 / z_dist[wheel_index]) * (
+            //         (z_dist[wheel_index] * Mathf.Cos(phi) - x_dist[wheel_index] * Mathf.Sin(phi)) * matP[wheel_index][0, 0] +
+            //         (z_dist[wheel_index] * Mathf.Sin(phi) + x_dist[wheel_index] * Mathf.Cos(phi)) * matP[wheel_index][1, 0]
+            //     );
 
-                //w
-                matVel[wheel_index][1, 0] =
-                -(1 / z_dist[wheel_index]) * (
-                    -Mathf.Sin(phi) * matP[wheel_index][0, 0] +
-                    Mathf.Cos(phi) * matP[wheel_index][1, 0]
-                );
-            }
-            Debug.Log(transform.name + " \t matVel[wheel_index][0, 0]   : \t" + matVel[wheel_index][0, 0]);
+            //     //w
+            //     matVel[wheel_index][1, 0] =
+            //     -(1 / z_dist[wheel_index]) * (
+            //         -Mathf.Sin(phi) * matP[wheel_index][0, 0] +
+            //         Mathf.Cos(phi) * matP[wheel_index][1, 0]
+            //     );
+            // }
+            // Debug.Log(transform.name + " \t matVel[wheel_index][0, 0]   : \t" + matVel[wheel_index][0, 0]);
 
             // set target velocity
             wheel.GetComponent<ConfigurableJoint>().targetAngularVelocity = Vector3.right * matVel[wheel_index][0, 0];
